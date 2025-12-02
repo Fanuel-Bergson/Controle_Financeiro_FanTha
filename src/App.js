@@ -103,18 +103,19 @@ const COLORS = [
   "#7bed9f",
 ];
 
+// Categorias Atualizadas (Cemig, Copasa e Ordem Alfabética)
 const CATEGORIAS = [
-  "Água",
   "Alimentação",
-  "Combustível", // Nova categoria adicionada
+  "Cemig", // Antiga Luz
+  "Combustível",
   "Compra Mensal",
   "Compra Semanal",
+  "Copasa", // Antiga Água
   "Educação",
   "Extra",
   "Internet",
   "Investimentos",
   "Lazer",
-  "Luz",
   "Moradia",
   "Outros",
   "Salário",
@@ -473,7 +474,7 @@ export default function App() {
       >
         <Wallet className="w-20 h-20 text-emerald-400 mb-6" />
         <h1 className="text-3xl font-bold text-white mb-2">
-          Finanças em Família
+          Controle Financeiro
         </h1>
         <p className="text-slate-400 mb-8">
           Faça login para acessar a conta conjunta.
@@ -482,7 +483,8 @@ export default function App() {
           onClick={loginGoogle}
           className="bg-white text-slate-900 px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-transform hover:bg-gray-100"
         >
-          <LogIn size={20} /> Entrar com Google
+          <LogIn size={20} />
+          Entrar com Google
         </button>
       </div>
     );
