@@ -47,9 +47,13 @@ import {
   Download,
   FileText,
   Minus,
+  Edit2,
+  User,
 } from "lucide-react";
 
-// --- CONFIGURAÇÃO DO FIREBASE (Chaves fixas) ---
+// ============================================================================
+// ⚠️ CONFIGURAÇÃO DO FIREBASE (COLE SUAS CHAVES AQUI) ⚠️
+// ============================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyAjp4wPC8RrgkAWWWbkomUxsRYNQEfksKI",
   authDomain: "controle-financeiro---fantha.firebaseapp.com",
@@ -59,15 +63,29 @@ const firebaseConfig = {
   appId: "1:296776506950:web:ef1841b4cd4517b8843447",
 };
 
-// Inicializa o Firebase
+// ============================================================================
+// 👪 CONFIGURAÇÃO DA FAMÍLIA (Mapeamento de E-mails para Nomes)
+// ============================================================================
+const EMAILS_FAMILIA = {
+  "fanuelbergson@gmail.com": "Fanuel", // Substitua pelo seu e-mail real
+  "arethakellen@gmail.com": "Aretha", // Substitua pelo e-mail real dela
+};
+
+// Função para pegar o nome personalizado
+const getNomeUsuario = (user) => {
+  if (!user || !user.email) return "Visitante";
+  return EMAILS_FAMILIA[user.email] || user.displayName.split(" ")[0];
+};
+// ============================================================================
+
+// Inicializa Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 
-const appId = "controle-financeiro-mobile-v1";
+const COLECAO_PUBLIC = "familia_fantha_v1";
 
-// Cores
 const COLORS = [
   "#0088FE",
   "#00C49F",
@@ -88,6 +106,7 @@ const COLORS = [
 const CATEGORIAS = [
   "Água",
   "Alimentação",
+  "Combustível", // Nova categoria adicionada
   "Compra Mensal",
   "Compra Semanal",
   "Educação",
@@ -110,11 +129,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Estados UI e Formulários
+  // Estados UI
   const [view, setView] = useState("dashboard");
   const [modalAberto, setModalAberto] = useState(false);
+
+  // Estados Metas
   const [modalMetaAberto, setModalMetaAberto] = useState(false);
   const [modalMovimentoMeta, setModalMovimentoMeta] = useState(null);
+  const [modalEdicaoMeta, setModalEdicaoMeta] = useState(null);
 
   // Form Transação
   const [tipo, setTipo] = useState("despesa");
@@ -129,25 +151,23 @@ export default function App() {
   const [valorMovimento, setValorMovimento] = useState("");
   const [tipoMovimentoMeta, setTipoMovimentoMeta] = useState("adicionar");
 
+  // Form Edição Meta (Nome e Valor)
+  const [editNomeMeta, setEditNomeMeta] = useState("");
+  const [editValorMeta, setEditValorMeta] = useState("");
+
   const [mesesSelecionados, setMesesSelecionados] = useState([]);
 
-  // --- Design Automático (CORREÇÃO DO ERRO) ---
+  // --- Design Automático ---
   useEffect(() => {
     if (!document.getElementById("tailwind-script")) {
       const script = document.createElement("script");
       script.id = "tailwind-script";
       script.src = "https://cdn.tailwindcss.com";
-
-      // Só configura o dark mode DEPOIS que o script carregar
       script.onload = () => {
-        if (window.tailwind) {
-          window.tailwind.config = { darkMode: "class" };
-        }
+        if (window.tailwind) window.tailwind.config = { darkMode: "class" };
       };
-
       document.head.appendChild(script);
     }
-
     const salvo = localStorage.getItem("theme");
     if (salvo === "dark") setDarkMode(true);
   }, []);
@@ -185,20 +205,23 @@ export default function App() {
     if (!user) return;
 
     const qTransacoes = query(
-      collection(db, "artifacts", appId, "users", user.uid, "transacoes"),
+      collection(
+        db,
+        "artifacts",
+        COLECAO_PUBLIC,
+        "public",
+        "data",
+        "transacoes"
+      ),
       orderBy("data", "desc")
     );
     const unsubTransacoes = onSnapshot(qTransacoes, (snapshot) => {
       const dados = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       setTransacoes(dados);
-      if (mesesSelecionados.length === 0 && dados.length > 0) {
-        const hoje = new Date().toISOString().slice(0, 7);
-        setMesesSelecionados([hoje]);
-      }
     });
 
     const qMetas = query(
-      collection(db, "artifacts", appId, "users", user.uid, "metas"),
+      collection(db, "artifacts", COLECAO_PUBLIC, "public", "data", "metas"),
       orderBy("criadoEm", "desc")
     );
     const unsubMetas = onSnapshot(qMetas, (snapshot) => {
@@ -216,8 +239,16 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
     try {
+      const autor = getNomeUsuario(user);
       await addDoc(
-        collection(db, "artifacts", appId, "users", user.uid, "transacoes"),
+        collection(
+          db,
+          "artifacts",
+          COLECAO_PUBLIC,
+          "public",
+          "data",
+          "transacoes"
+        ),
         {
           tipo,
           valor: parseFloat(valor),
@@ -226,6 +257,8 @@ export default function App() {
           data,
           mesAno: data.slice(0, 7),
           criadoEm: Timestamp.now(),
+          autor: autor,
+          autorId: user.uid,
         }
       );
       setValor("");
@@ -239,7 +272,7 @@ export default function App() {
   const deletarTransacao = async (id) => {
     if (confirm("Excluir transação?"))
       await deleteDoc(
-        doc(db, "artifacts", appId, "users", user.uid, "transacoes", id)
+        doc(db, "artifacts", COLECAO_PUBLIC, "public", "data", "transacoes", id)
       );
   };
 
@@ -247,13 +280,15 @@ export default function App() {
     e.preventDefault();
     if (!user) return;
     try {
+      const autor = getNomeUsuario(user);
       await addDoc(
-        collection(db, "artifacts", appId, "users", user.uid, "metas"),
+        collection(db, "artifacts", COLECAO_PUBLIC, "public", "data", "metas"),
         {
           nome: nomeMeta,
           alvo: parseFloat(valorAlvo),
           saldo: 0,
           criadoEm: Timestamp.now(),
+          autor: autor,
         }
       );
       setNomeMeta("");
@@ -273,13 +308,18 @@ export default function App() {
       const metaRef = doc(
         db,
         "artifacts",
-        appId,
-        "users",
-        user.uid,
+        COLECAO_PUBLIC,
+        "public",
+        "data",
         "metas",
         modalMovimentoMeta.id
       );
-      await updateDoc(metaRef, { saldo: increment(ajuste) });
+
+      const autor = getNomeUsuario(user);
+      await updateDoc(metaRef, {
+        saldo: increment(ajuste),
+        ultimoAutor: autor,
+      });
       setValorMovimento("");
       setModalMovimentoMeta(null);
     } catch (error) {
@@ -287,25 +327,51 @@ export default function App() {
     }
   };
 
+  const editarMetaCompleta = async (e) => {
+    e.preventDefault();
+    if (!user || !modalEdicaoMeta) return;
+    try {
+      const metaRef = doc(
+        db,
+        "artifacts",
+        COLECAO_PUBLIC,
+        "public",
+        "data",
+        "metas",
+        modalEdicaoMeta.id
+      );
+      await updateDoc(metaRef, {
+        nome: editNomeMeta,
+        alvo: parseFloat(editValorMeta),
+      });
+      setModalEdicaoMeta(null);
+      setEditNomeMeta("");
+      setEditValorMeta("");
+    } catch (error) {
+      alert("Erro ao editar.");
+    }
+  };
+
   const deletarMeta = async (id) => {
     if (confirm("Excluir esta meta?"))
       await deleteDoc(
-        doc(db, "artifacts", appId, "users", user.uid, "metas", id)
+        doc(db, "artifacts", COLECAO_PUBLIC, "public", "data", "metas", id)
       );
   };
 
+  // --- Exportação ---
   const exportarCSV = () => {
     let csvContent =
-      "data:text/csv;charset=utf-8,Data,Descrição,Categoria,Tipo,Valor\n";
+      "data:text/csv;charset=utf-8,Data,Descrição,Categoria,Tipo,Valor,Autor\n";
     transacoesFiltradas.forEach((t) => {
       csvContent += `${formatarData(t.data)},${t.descricao},${t.categoria},${
         t.tipo
-      },${t.valor.toFixed(2)}\n`;
+      },${t.valor.toFixed(2)},${t.autor || ""}\n`;
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "minhas_financas.csv");
+    link.setAttribute("download", "financas_familia.csv");
     document.body.appendChild(link);
     link.click();
   };
@@ -322,13 +388,20 @@ export default function App() {
         .reverse(),
     [transacoes]
   );
-  const transacoesFiltradas = useMemo(
-    () =>
-      mesesSelecionados.length === 0
-        ? transacoes
-        : transacoes.filter((t) => mesesSelecionados.includes(t.mesAno)),
-    [transacoes, mesesSelecionados]
-  );
+
+  const transacoesFiltradas = useMemo(() => {
+    if (mesesSelecionados.length === 0) return transacoes;
+    return transacoes.filter((t) => mesesSelecionados.includes(t.mesAno));
+  }, [transacoes, mesesSelecionados]);
+
+  const dadosDashboard = useMemo(() => {
+    if (view === "dashboard" && mesesSelecionados.length === 0) {
+      const hoje = new Date().toISOString().slice(0, 7);
+      return transacoes.filter((t) => t.mesAno === hoje);
+    }
+    return transacoesFiltradas;
+  }, [transacoesFiltradas, transacoes, view, mesesSelecionados]);
+
   const resumo = useMemo(
     () =>
       transacoesFiltradas.reduce(
@@ -342,9 +415,12 @@ export default function App() {
     [transacoesFiltradas]
   );
   const saldo = resumo.receitas - resumo.despesas;
+
   const dadosGrafico = useMemo(() => {
+    const dadosParaGrafico =
+      view === "dashboard" ? dadosDashboard : transacoesFiltradas;
     const map = {};
-    transacoesFiltradas
+    dadosParaGrafico
       .filter((t) => t.tipo === "despesa")
       .forEach((t) => {
         if (!map[t.categoria]) map[t.categoria] = 0;
@@ -353,8 +429,9 @@ export default function App() {
     return Object.keys(map)
       .map((k) => ({ name: k, value: map[k] }))
       .sort((a, b) => b.value - a.value);
-  }, [transacoesFiltradas]);
+  }, [transacoesFiltradas, dadosDashboard, view]);
 
+  // --- UI Aux ---
   const toggleMes = (mes) =>
     setMesesSelecionados((p) =>
       p.includes(mes) ? p.filter((m) => m !== mes) : [...p, mes]
@@ -396,9 +473,11 @@ export default function App() {
       >
         <Wallet className="w-20 h-20 text-emerald-400 mb-6" />
         <h1 className="text-3xl font-bold text-white mb-2">
-          Controle Financeiro
+          Finanças em Família
         </h1>
-        <p className="text-slate-400 mb-8">Seu dinheiro, suas regras.</p>
+        <p className="text-slate-400 mb-8">
+          Faça login para acessar a conta conjunta.
+        </p>
         <button
           onClick={loginGoogle}
           className="bg-white text-slate-900 px-6 py-3 rounded-full font-bold shadow-lg flex items-center gap-2 active:scale-95 transition-transform hover:bg-gray-100"
@@ -442,9 +521,20 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* Info do Usuário com Nome Personalizado */}
+        <div className="flex items-center gap-2 text-xs text-slate-400 mb-2">
+          <User size={12} />
+          <span>
+            Logado como:{" "}
+            <strong className="text-emerald-400">{getNomeUsuario(user)}</strong>
+          </span>
+        </div>
+
         <div className="mb-4">
           <p className="text-slate-400 text-xs uppercase tracking-wide mb-1">
-            Saldo Total
+            Saldo Total{" "}
+            {mesesSelecionados.length > 0 ? "(Filtrado)" : "(Geral)"}
           </p>
           <h2
             className={`text-4xl font-bold ${
@@ -493,6 +583,12 @@ export default function App() {
       <div className="px-4 max-w-3xl mx-auto">
         {view === "dashboard" && (
           <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            {mesesSelecionados.length === 0 && (
+              <p className="text-center text-xs text-slate-400 italic">
+                Mostrando dados do mês atual. Selecione meses na lista para
+                filtrar.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700">
                 <div className="flex items-center gap-2 text-emerald-500 mb-1">
@@ -579,6 +675,13 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            {mesesSelecionados.length === 0 && (
+              <p className="text-xs text-center text-slate-400 mb-2">
+                Exibindo histórico completo. Selecione um mês para filtrar.
+              </p>
+            )}
+
             {transacoesFiltradas.length === 0 ? (
               <div className="text-center py-12 text-gray-400 dark:text-slate-500 flex flex-col items-center gap-3">
                 <ListIcon size={48} className="opacity-20" />
@@ -598,9 +701,18 @@ export default function App() {
                     <h4 className="font-bold text-gray-800 dark:text-gray-200">
                       {t.descricao}
                     </h4>
-                    <div className="flex gap-2 text-xs opacity-70 mt-1 text-gray-600 dark:text-gray-400">
-                      <span className="font-bold uppercase">{t.categoria}</span>
-                      <span>• {formatarData(t.data)}</span>
+                    <div className="flex flex-col gap-1 mt-1">
+                      <div className="flex gap-2 text-xs opacity-70 text-gray-600 dark:text-gray-400">
+                        <span className="font-bold uppercase">
+                          {t.categoria}
+                        </span>
+                        <span>• {formatarData(t.data)}</span>
+                      </div>
+                      {t.autor && (
+                        <span className="text-[10px] text-slate-400 bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded w-fit border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+                          <User size={10} /> {t.autor}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
@@ -646,16 +758,33 @@ export default function App() {
                 return (
                   <div
                     key={m.id}
-                    className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700"
+                    className="bg-white dark:bg-slate-800 p-5 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-700 relative"
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="font-bold text-lg text-slate-800 dark:text-white">
-                          {m.nome}
-                        </h3>
+                      <div className="flex-1 mr-2">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-lg text-slate-800 dark:text-white">
+                            {m.nome}
+                          </h3>
+                          <button
+                            onClick={() => {
+                              setModalEdicaoMeta(m);
+                              setEditNomeMeta(m.nome);
+                              setEditValorMeta(m.alvo);
+                            }}
+                            className="text-slate-400 hover:text-blue-500"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                        </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
                           Objetivo: {formatarMoeda(m.alvo)}
                         </p>
+                        {m.autor && (
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Criado por: {m.autor}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => deletarMeta(m.id)}
@@ -717,6 +846,7 @@ export default function App() {
         </button>
       )}
 
+      {/* Modal Transação */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-white dark:bg-slate-800 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl p-6 shadow-2xl border-t border-gray-100 dark:border-slate-700 animate-in slide-in-from-bottom-10">
@@ -850,6 +980,58 @@ export default function App() {
                 className="w-full py-4 rounded-xl bg-slate-900 dark:bg-emerald-500 text-white font-bold text-lg mt-4 shadow-lg active:scale-95 transition-all"
               >
                 Criar Meta
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Edição Meta Completa */}
+      {modalEdicaoMeta && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-800 w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+                Editar Meta
+              </h2>
+              <button
+                onClick={() => setModalEdicaoMeta(null)}
+                className="p-2 bg-gray-100 dark:bg-slate-700 rounded-full text-gray-600 dark:text-gray-300"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={editarMetaCompleta} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase">
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNomeMeta}
+                  onChange={(e) => setEditNomeMeta(e.target.value)}
+                  className="w-full p-4 bg-gray-50 dark:bg-slate-700 dark:text-white rounded-xl outline-none mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-400 uppercase">
+                  Valor Alvo
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={editValorMeta}
+                  onChange={(e) => setEditValorMeta(e.target.value)}
+                  className="w-full p-4 bg-gray-50 dark:bg-slate-700 dark:text-white rounded-xl outline-none mt-1"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full py-4 rounded-xl bg-slate-900 dark:bg-emerald-500 text-white font-bold text-lg mt-4 shadow-lg active:scale-95 transition-all"
+              >
+                Salvar Alterações
               </button>
             </form>
           </div>
